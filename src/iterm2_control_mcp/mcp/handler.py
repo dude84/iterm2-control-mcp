@@ -200,65 +200,6 @@ class ToolHandler:
                 }
             return await call_session(status_target, "iterm_status", {})
 
-        if name == "iterm_pipe":
-            from_session = str(arguments.get("from_session", ""))
-            to_session = str(arguments.get("to_session", ""))
-            if not from_session or not to_session:
-                return {
-                    "error": "from_session and to_session are required",
-                }
-
-            read_params: dict[str, object] = {}
-            since = arguments.get("since")
-            lines = arguments.get("lines")
-            if since is not None:
-                read_params["since"] = since
-            if lines is not None:
-                read_params["lines"] = lines
-            elif since is None:
-                # First call with no `since` and no explicit `lines`:
-                # establish a from-now cursor instead of dumping the
-                # tail-50 backfill (banner, prompts, prior output) into
-                # the target pane. Caller sets lines=N explicitly if
-                # they want backfill.
-                read_params["lines"] = 0
-
-            read_result = await call_session(
-                from_session, "iterm_read_output", read_params,
-            )
-            if isinstance(read_result, dict) and "error" in read_result:
-                return read_result
-            if not isinstance(read_result, dict):
-                return {"error": f"unexpected read result: {read_result!r}"}
-
-            stdout = str(read_result.get("stdout", ""))
-            response: dict[str, object] = {
-                "piped": True,
-                "from_session": from_session,
-                "to_session": to_session,
-                "bytes": len(stdout.encode()),
-                "cursor": read_result.get("cursor"),
-            }
-            warning = read_result.get("warning")
-            if warning is not None:
-                response["warning"] = warning
-
-            if stdout:
-                # Deque lines are rstripped; joining with "\n" leaves no
-                # trailing newline. Append one so the target's stdin
-                # consumer (cat -, jq, while read …) sees the final line
-                # as complete rather than holding it until more bytes
-                # arrive next call.
-                type_result = await call_session(
-                    to_session,
-                    "iterm_type",
-                    {"text": stdout + "\n"},
-                )
-                if isinstance(type_result, dict) and "error" in type_result:
-                    return type_result
-
-            return response
-
         # Terminal tools — resolve target session
         target = self._resolve_session(arguments)
         if not target:

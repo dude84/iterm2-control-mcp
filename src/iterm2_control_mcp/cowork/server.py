@@ -175,10 +175,9 @@ class DaemonHandler:
                 logger.info("Command: %s", command)
                 # Capture the cursor BEFORE sending so any output the
                 # command produces is past this watermark. Callers that
-                # want to stream the command's output via iterm_pipe
-                # pass this cursor as `since` on their first pipe call,
-                # which closes the send→pipe race that used to silently
-                # drop the leading edge of fast-starting output.
+                # want the command's output without racing its leading
+                # edge pass this cursor as `since` to a subsequent
+                # iterm_read_output call.
                 await self._observer.refresh_from_screen()
                 pre_send_cursor = self._observer.line_cursor
                 await self._observer.send_command(command)

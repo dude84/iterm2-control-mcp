@@ -120,10 +120,6 @@
       "description": "Read recent terminal output. Shared terminal \u2014 buffer contains ALL activity, yours and the user's. Commands you didn't send were typed by the user. Don't speculate about automatic actions. Optionally wait for text or clear buffer."
     },
     {
-      "name": "iterm_pipe",
-      "description": "Forward a chunk of one session's output into another session's pane as if typed. Chain with iterm_send_command's returned cursor to stream a command's output across sessions without a leading-edge race."
-    },
-    {
       "name": "iterm_capture_screen",
       "description": "Snapshot of visible terminal screen with cursor position. Check if shell prompt is on last line (idle) or not (command running). Screen may show user activity \u2014 report observations, don't speculate."
     },

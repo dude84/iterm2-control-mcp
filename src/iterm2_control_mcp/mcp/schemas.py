@@ -314,16 +314,13 @@ SESSION_TOOLS = [
             "iterm_read_output or iterm_capture_screen afterwards. "
             "Returns { status, session, cursor } where `cursor` is the "
             "source buffer's position *before* the command was typed — "
-            "pass it as `since` to iterm_pipe or iterm_read_output to "
-            "stream the command's output without missing the leading "
-            "edge.\n"
+            "pass it as `since` to iterm_read_output to retrieve the "
+            "command's output without racing the leading edge.\n"
             "\n"
             "WHEN TO USE:\n"
             "- You are starting a long-running process (tail -f, server, "
             "watch loop) and will observe output with later reads.\n"
             "- You don't need the output at all.\n"
-            "- You want to pipe a command's output into another session "
-            "via iterm_pipe (chain the returned cursor).\n"
             "\n"
             "WHEN TO USE A DIFFERENT TOOL:\n"
             "- Use `iterm_send_and_read` for the common case — send a "
@@ -503,117 +500,6 @@ SESSION_TOOLS = [
             },
             "required": ["text"],
         },
-    ),
-    Tool(
-        name="iterm_pipe",
-        description=(
-            "Forward a chunk of session A's recent output into session "
-            "B's pane, as if typed. The primitive for 'run this in A, "
-            "feed the output into a command in B' without round-tripping "
-            "the payload through the LLM context.\n"
-            "\n"
-            "CANONICAL PATTERN — always chain `iterm_send_command`'s "
-            "returned cursor:\n"
-            "  iterm_send_command(B, '<stdin-reading sink>')\n"
-            "  r = iterm_send_command(A, '<command producing output>')\n"
-            "  cursor = r.cursor                    # pre-send watermark\n"
-            "  loop:\n"
-            "    r = iterm_pipe(A, B, since=cursor)\n"
-            "    cursor = r.cursor                  # advance each step\n"
-            "  iterm_send_keys(B, 'ctrl-d')         # close the sink\n"
-            "\n"
-            "DO NOT start a stream with `iterm_pipe(from, to)` — a call "
-            "with no `since` races against any in-flight output from A "
-            "and SILENTLY DROPS the leading edge (the caller sees "
-            "`bytes: 0` while output that never reached the sink is "
-            "already past the returned cursor). The chain above closes "
-            "that race by anchoring the cursor *before* the source "
-            "command runs.\n"
-            "\n"
-            "WORKS ACROSS CONTEXTS. A and B can be any combination of "
-            "local Mac shells, SSH'd-into-remote shells, docker-exec'd "
-            "shells — the bridge is the iTerm2 pane layer (what iTerm2 "
-            "renders in A → what iTerm2 types into B), so no shared "
-            "filesystem is required.\n"
-            "\n"
-            "CALLER IS RESPONSIBLE FOR THE SINK. Before the first "
-            "`iterm_pipe` call, B must already be running a command "
-            "that reads stdin — `cat -`, `jq -r .tag`, `tee file`, "
-            "`while read x; do …`. Otherwise typed bytes land at B's "
-            "shell prompt and get executed as commands.\n"
-            "\n"
-            "BACKFILL (niche). Pass `lines=N` on a call with no `since` "
-            "to forward A's last N buffered lines. Tails include "
-            "banner/prompts/escape artefacts — prefer payload markers "
-            "(`echo ---START---; cmd; echo ---END---`) and have the "
-            "sink slice between them.\n"
-            "\n"
-            "CAVEATS:\n"
-            "- Line-stripped text only: trailing whitespace inside "
-            "lines and binary bytes are lost. Use iterm_upload_file / "
-            "iterm_download_file for those.\n"
-            "- `warning: cursor_lost_due_to_scroll` means A produced "
-            "more than the ring buffer (default 100 lines) could hold "
-            "between calls — loop faster or raise `buffer_lines`.\n"
-            "- Rate capped by iTerm2's screen streamer. Foreground "
-            "panes stream in real time; backgrounded or minimized "
-            "panes throttle to ~1 Hz until refocused.\n"
-            "\n"
-            "Returns { piped, from_session, to_session, bytes, cursor, "
-            "warning? }. There is no server-side background task — "
-            "the agent decides cadence."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "from_session": {
-                    "type": "string",
-                    "description": (
-                        "Source session ID — the session whose output "
-                        "is read."
-                    ),
-                },
-                "to_session": {
-                    "type": "string",
-                    "description": (
-                        "Target session ID — the session whose pane the "
-                        "output is typed into. Must already be running "
-                        "a stdin-reading command."
-                    ),
-                },
-                "since": {
-                    "type": "integer",
-                    "description": (
-                        "Monotonic cursor. For streaming a command's "
-                        "output from A, pass the `cursor` field "
-                        "returned by `iterm_send_command` — that's the "
-                        "source buffer position captured *before* the "
-                        "command was typed, so nothing on the leading "
-                        "edge is lost. On subsequent iterations, pass "
-                        "the `cursor` returned by the previous "
-                        "iterm_pipe response. Omitting this on a fresh "
-                        "stream returns the current buffer tip but "
-                        "SILENTLY DROPS any output already in flight "
-                        "from a just-sent command — always prefer the "
-                        "iterm_send_command chain."
-                    ),
-                },
-                "lines": {
-                    "type": "integer",
-                    "description": (
-                        "Optional backfill on a call with no `since`: "
-                        "forwards the source's last N buffered lines. "
-                        "Niche — tails include banner, prompts, and "
-                        "escape artefacts that will pollute the sink. "
-                        "Prefer the iterm_send_command-cursor chain "
-                        "with payload markers (`echo ---START---; "
-                        "cmd; echo ---END---`) over backfill."
-                    ),
-                },
-            },
-            "required": ["from_session", "to_session"],
-        },
-        annotations=_DESTRUCTIVE,
     ),
     Tool(
         name="iterm_read_output",

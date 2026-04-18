@@ -110,9 +110,9 @@ def test_compute_new_lines_first_snapshot() -> None:
 
 
 def test_read_since_lines_zero_returns_cursor_only() -> None:
-    # lines=0 with no `since` is the "from-now" pattern iterm_pipe uses
-    # on its first call — return the current cursor without dumping the
-    # buffer's tail (banner, prompts, earlier output) as content.
+    # lines=0 with no `since` is a from-now cursor probe: return the
+    # current cursor without dumping the buffer's tail as content. Used
+    # to seed a since-cursor so subsequent reads only get new lines.
     obs = _make_observer(["a", "b", "c", "d", "e"])
     result = obs.read_since(since=None, lines=0)
     assert result == {"stdout": "", "cursor": 5}

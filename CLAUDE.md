@@ -62,12 +62,11 @@ Session management:
 - `iterm_status` — session info: ID, attached state, uptime, buffer size. No-arg form reports the active session or `{"active": false, "hint": ...}`
 
 Terminal tools (all accept optional `session` param; defaults to active session):
-- `iterm_send_command` — type and execute a shell command (fire-and-forget). Returns `{status, session, cursor}` — `cursor` is the source buffer position captured *before* the command was typed, intended as the `since` anchor for an `iterm_pipe` chain
+- `iterm_send_command` — type and execute a shell command (fire-and-forget). Returns `{status, session, cursor}` — `cursor` is the source buffer position captured *before* the command was typed, for chaining into a subsequent `iterm_read_output(since=…)` call without racing the command's leading-edge output
 - `iterm_send_and_read` — send a command and return its output in one call
 - `iterm_send_keys` — send special keys: `ctrl-c`, `ctrl-d`, `ctrl-z`, `ctrl-l`, `enter`, `tab`, `escape`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`
 - `iterm_type` — type text into the prompt line without pressing Enter (stage for user review)
 - `iterm_read_output` — read recent output (optional: `since` cursor, `wait_for`, `clear`)
-- `iterm_pipe` — forward a chunk of one session's output into another session's pane as if typed. Works across any context combination (local↔remote, remote↔remote); target must already be running a stdin-reading command. Canonical pattern: chain the `cursor` returned by `iterm_send_command` as `since` to avoid the send→pipe leading-edge race
 - `iterm_capture_screen` — atomic snapshot of visible screen with cursor position and dimensions
 - `iterm_probe_environment` — returns a read-only command sequence for the agent to run
 

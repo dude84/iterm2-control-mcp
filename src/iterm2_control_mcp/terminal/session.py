@@ -296,9 +296,8 @@ class SessionObserver:
         else:
             # lines > 0: tail-N backfill.
             # lines == 0: "no backfill — just tell me the current cursor."
-            # Used by iterm_pipe to establish a from-now streaming cursor
-            # without dragging the banner / prompt / earlier output into
-            # the target pane.
+            # Callers that want "anything new past *now*" pass lines=0
+            # to seed a since-cursor without pulling the current tail.
             sliced = buf[-lines:] if lines > 0 else []
 
         result: dict[str, object] = {
@@ -436,9 +435,9 @@ class SessionObserver:
         """Force-fold the pane's current state into the buffer.
 
         The streamer only fires on iTerm2 redraw events, which can be
-        sparse (a quiet pane stays quiet). Callers that need a
-        freshly-synced buffer — notably iterm_pipe between chunks —
-        trigger this explicitly before reading.
+        sparse (a quiet pane stays quiet). iterm_read_output triggers
+        this before slicing so a read always sees what's actually on
+        the pane, not what the streamer last happened to push.
         """
         contents = await self._session.async_get_screen_contents()
         current_visible = [
