@@ -150,6 +150,14 @@ class DaemonHandler:
                             id=req_id,
                             error="since must be an integer cursor",
                         )
+                # Force a pull-refresh of the observer's buffer from the
+                # pane's current state. iTerm2's push-based screen
+                # streamer can be quiet for seconds at a time on an
+                # inactive pane — without this, read_since would return
+                # stale data until the streamer next fires. The refresh
+                # is cheap (one async_get_screen_contents) and runs
+                # through the same dedup pipeline as the streamer.
+                await self._observer.refresh_from_screen()
                 read_result = self._observer.read_since(
                     since=since_val, lines=lines,
                 )
@@ -165,10 +173,19 @@ class DaemonHandler:
                 if not command:
                     return Response(id=req_id, error="command is required")
                 logger.info("Command: %s", command)
+                # Capture the cursor BEFORE sending so any output the
+                # command produces is past this watermark. Callers that
+                # want to stream the command's output via iterm_pipe
+                # pass this cursor as `since` on their first pipe call,
+                # which closes the send→pipe race that used to silently
+                # drop the leading edge of fast-starting output.
+                await self._observer.refresh_from_screen()
+                pre_send_cursor = self._observer.line_cursor
                 await self._observer.send_command(command)
                 return Response(id=req_id, result={
                     "status": "executed",
                     "session": self._session_identity(),
+                    "cursor": pre_send_cursor,
                 })
 
             if method == "iterm_send_and_read":

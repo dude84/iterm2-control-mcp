@@ -44,6 +44,42 @@ _KEY_MAP: dict[str, str] = {
 AI_MARKER = "# [ai]"
 
 
+def _compute_new_lines(
+    last_visible: list[str],
+    current_visible: list[str],
+    scrollback_delta: int,
+) -> list[str]:
+    """Return lines appended to the pane between two streamer fires.
+
+    iTerm2's screen_streamer delivers full visible-screen snapshots, not
+    deltas — redraws (cursor blinks, prompt updates, escape processing)
+    re-deliver lines we've already captured. This helper diffs the new
+    snapshot against the previous one, accounting for:
+
+      - Lines that scrolled off the top (count == scrollback_delta). They
+        were at positions [0..scrollback_delta-1] of last_visible — still
+        "new" from the observer's perspective because they passed
+        through the pane and we need to record them.
+      - Lines newly appeared below the overlap. We find the first row
+        where the surviving-old and new-visible diverge; anything at or
+        below that row in new_visible is new content.
+
+    Mid-screen edits (a row's text changes in place) currently cause
+    over-appending from the edit point down. Acceptable — it's a rare
+    case in normal shell output, and the alternative (skip the edit)
+    would under-report.
+    """
+    scrolled_off = last_visible[:scrollback_delta] if scrollback_delta > 0 else []
+    remaining_old = last_visible[scrollback_delta:]
+    common = 0
+    for i in range(min(len(remaining_old), len(current_visible))):
+        if remaining_old[i] != current_visible[i]:
+            break
+        common = i + 1
+    new_below = current_visible[common:]
+    return scrolled_off + new_below
+
+
 class SessionObserver:
     def __init__(
         self,
@@ -67,6 +103,15 @@ class SessionObserver:
         # each command so it waits only for that command's completion.
         self._command_end_event: asyncio.Event = asyncio.Event()
         self._last_exit_code: int | None = None
+        # Dedup state for the screen-streamer loop — iTerm2 re-delivers
+        # full visible-screen snapshots on every redraw, so we compare
+        # against the previous snapshot and only append truly new lines.
+        self._last_visible: list[str] = []
+        self._last_scrollback: int = 0
+        # Serialize buffer mutations between the streamer loop and any
+        # pull-side refresh (e.g. from read_since) so both can safely
+        # update _buffer / _line_cursor.
+        self._buffer_lock: asyncio.Lock = asyncio.Lock()
 
     @property
     def session_id(self) -> str:
@@ -249,7 +294,12 @@ class SessionObserver:
                 offset = max(since - oldest_cursor, 0)
                 sliced = buf[offset:]
         else:
-            sliced = buf[-lines:] if lines > 0 else buf
+            # lines > 0: tail-N backfill.
+            # lines == 0: "no backfill — just tell me the current cursor."
+            # Used by iterm_pipe to establish a from-now streaming cursor
+            # without dragging the banner / prompt / earlier output into
+            # the target pane.
+            sliced = buf[-lines:] if lines > 0 else []
 
         result: dict[str, object] = {
             "stdout": "\n".join(sliced),
@@ -359,6 +409,47 @@ class SessionObserver:
                 cmd[start : start + upload_chunk_size],
             )
 
+    async def _ingest_snapshot(
+        self,
+        current_visible: list[str],
+        current_scrollback: int,
+    ) -> None:
+        """Fold a full-screen snapshot into the buffer, deduplicated.
+
+        Used by both the push-side streamer loop and the pull-side
+        refresh path. Guarded by a lock because both can run in the
+        same event loop and mutate the buffer.
+        """
+        async with self._buffer_lock:
+            scrollback_delta = max(0, current_scrollback - self._last_scrollback)
+            new_lines = _compute_new_lines(
+                self._last_visible, current_visible, scrollback_delta,
+            )
+            for line in new_lines:
+                if line:
+                    self._buffer.append(line)
+                    self._line_cursor += 1
+            self._last_visible = current_visible
+            self._last_scrollback = current_scrollback
+
+    async def refresh_from_screen(self) -> None:
+        """Force-fold the pane's current state into the buffer.
+
+        The streamer only fires on iTerm2 redraw events, which can be
+        sparse (a quiet pane stays quiet). Callers that need a
+        freshly-synced buffer — notably iterm_pipe between chunks —
+        trigger this explicitly before reading.
+        """
+        contents = await self._session.async_get_screen_contents()
+        current_visible = [
+            contents.line(i).string.rstrip()
+            for i in range(contents.number_of_lines)
+        ]
+        await self._ingest_snapshot(
+            current_visible,
+            contents.number_of_lines_above_screen,
+        )
+
     async def start_observing(self) -> None:
         logger.info("Acquiring terminal: %s", self._session.session_id)
         async with self._session.get_screen_streamer() as streamer:
@@ -366,9 +457,11 @@ class SessionObserver:
                 contents = await streamer.async_get()
                 if contents is None:
                     break
-                for line_num in range(contents.number_of_lines):
-                    line = contents.line(line_num)
-                    text = line.string.rstrip()
-                    if text:
-                        self._buffer.append(text)
-                        self._line_cursor += 1
+                current_visible = [
+                    contents.line(i).string.rstrip()
+                    for i in range(contents.number_of_lines)
+                ]
+                await self._ingest_snapshot(
+                    current_visible,
+                    contents.number_of_lines_above_screen,
+                )

@@ -59,6 +59,65 @@ def test_read_since_at_tip_returns_empty() -> None:
     assert result["cursor"] == 2
 
 
+def test_compute_new_lines_append_at_bottom() -> None:
+    from iterm2_control_mcp.terminal.session import _compute_new_lines
+    # Visible screen grew by one line (v1.0.1 appeared after cmd echo).
+    # Trailing "" rows are terminal padding and the helper just treats
+    # them as content (the caller filters empties on ingest).
+    old = ["banner", "prompt", "cmd", "", "", "", "", ""]
+    new = ["banner", "prompt", "cmd", "v1.0.1", "", "", "", ""]
+    assert _compute_new_lines(old, new, scrollback_delta=0) == [
+        "v1.0.1", "", "", "", "",
+    ]
+
+
+def test_compute_new_lines_cosmetic_redraw_returns_empty() -> None:
+    from iterm2_control_mcp.terminal.session import _compute_new_lines
+    old = ["banner", "prompt", "cmd"]
+    new = ["banner", "prompt", "cmd"]
+    assert _compute_new_lines(old, new, scrollback_delta=0) == []
+
+
+def test_compute_new_lines_scrolled_off() -> None:
+    from iterm2_control_mcp.terminal.session import _compute_new_lines
+    # Screen height 3. One line scrolled off, one new at the bottom.
+    old = ["A", "B", "C"]
+    new = ["B", "C", "D"]
+    # A scrolled off (still "new" from observer's perspective — it has
+    # passed through the pane and must be recorded); D is new at the
+    # bottom.
+    assert _compute_new_lines(old, new, scrollback_delta=1) == ["A", "D"]
+
+
+def test_compute_new_lines_all_scrolled() -> None:
+    from iterm2_control_mcp.terminal.session import _compute_new_lines
+    old = ["A", "B", "C"]
+    new = ["D", "E", "F"]
+    # No overlap: all of old scrolled off, all of new is new content.
+    assert _compute_new_lines(old, new, scrollback_delta=3) == [
+        "A", "B", "C", "D", "E", "F",
+    ]
+
+
+def test_compute_new_lines_first_snapshot() -> None:
+    from iterm2_control_mcp.terminal.session import _compute_new_lines
+    # Observer's first fire — _last_visible is [], everything is new.
+    old: list[str] = []
+    new = ["banner", "prompt"]
+    assert _compute_new_lines(old, new, scrollback_delta=0) == [
+        "banner", "prompt",
+    ]
+
+
+def test_read_since_lines_zero_returns_cursor_only() -> None:
+    # lines=0 with no `since` is the "from-now" pattern iterm_pipe uses
+    # on its first call — return the current cursor without dumping the
+    # buffer's tail (banner, prompts, earlier output) as content.
+    obs = _make_observer(["a", "b", "c", "d", "e"])
+    result = obs.read_since(since=None, lines=0)
+    assert result == {"stdout": "", "cursor": 5}
+
+
 def test_read_since_older_than_buffer_warns() -> None:
     # buffer_lines=3 means only the last 3 fit
     obs = _make_observer(buffer_lines=3)

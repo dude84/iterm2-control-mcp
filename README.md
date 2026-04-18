@@ -16,6 +16,7 @@ Give AI agents their own interactive terminal sessions. iterm2-control-mcp opens
 | **Session persistence** | Tied to conversation | Survive across conversations; detach and reattach |
 | **Multiple sessions** | Single terminal context | Named sessions with a 16-session connection pool by default |
 | **Remote + nested shells** | Requires separate SSH extension | User SSHes / `docker exec`s → AI takes over in that context |
+| **Cross-session orchestration** | Not possible | `iterm_pipe` streams one session's output into another's stdin without round-tripping through the LLM |
 | **Works with** | Claude Code only | Claude Desktop, Claude Code, Cursor, any MCP client |
 
 ### When it shines: shared interactive sessions
@@ -39,6 +40,24 @@ Give AI agents their own interactive terminal sessions. iterm2-control-mcp opens
 ```
 
 This workflow is impossible with fire-and-forget terminal access. The AI doesn't have your credentials; you bring them, then hand the live shell over.
+
+### When it also shines: cross-session piping
+
+Run a command in one session and feed its output straight into a command running in another — without the payload ever passing through the model's context. "Build on the remote host, deploy from the local shell" in a single loop:
+
+```
+# B (local): sink is a stdin-reading deploy loop
+iterm_send_command(B, "jq -r .image_tag | xargs deploy-to-staging")
+
+# A (SSH'd into build host): capture the pre-send cursor
+r = iterm_send_command(A, "build --json")
+cursor = r.cursor
+
+# Forward new lines as the build emits them
+loop:  r = iterm_pipe(from=A, to=B, since=cursor);  cursor = r.cursor
+```
+
+Works across any context combination (local↔local, local↔remote, docker↔SSH) because the bridge is the iTerm2 pane layer, not a shared filesystem. See [docs/TOOLS.md](docs/TOOLS.md#cross-session-piping) for the full contract and caveats.
 
 ## Architecture
 
@@ -111,7 +130,7 @@ In Claude Desktop → Settings → Extensions → iterm2-control-mcp → **Confi
 
 | Setting | Default | Description |
 |---|---|---|
-| **AI command markers** | Off | Highlight AI-sent commands with a `# [ai]` marker line |
+| **AI command markers** | On | Highlight AI-sent commands with a `# [ai]` marker line |
 | **Cleanup on window close** | On | Auto-cleanup session when the iTerm2 window is closed |
 | **iTerm2 profile name** | *(empty)* | Use a custom iTerm2 profile for session windows. Empty = default orange theme |
 | **Max connected sessions** | 16 | Connection pool size. Oldest inactive session is dropped when full |

@@ -8,8 +8,6 @@ User-facing documentation:
 - `SECURITY.md` — threat model + **transport policy (hard rule)**
 - `docs/DEVELOPMENT.md` — setup, layout, releases
 
-Backlog: `TODO.md`.
-
 ---
 
 ## Quick start
@@ -64,11 +62,12 @@ Session management:
 - `iterm_status` — session info: ID, attached state, uptime, buffer size. No-arg form reports the active session or `{"active": false, "hint": ...}`
 
 Terminal tools (all accept optional `session` param; defaults to active session):
-- `iterm_send_command` — type and execute a shell command (fire-and-forget)
+- `iterm_send_command` — type and execute a shell command (fire-and-forget). Returns `{status, session, cursor}` — `cursor` is the source buffer position captured *before* the command was typed, intended as the `since` anchor for an `iterm_pipe` chain
 - `iterm_send_and_read` — send a command and return its output in one call
 - `iterm_send_keys` — send special keys: `ctrl-c`, `ctrl-d`, `ctrl-z`, `ctrl-l`, `enter`, `tab`, `escape`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`
 - `iterm_type` — type text into the prompt line without pressing Enter (stage for user review)
 - `iterm_read_output` — read recent output (optional: `since` cursor, `wait_for`, `clear`)
+- `iterm_pipe` — forward a chunk of one session's output into another session's pane as if typed. Works across any context combination (local↔remote, remote↔remote); target must already be running a stdin-reading command. Canonical pattern: chain the `cursor` returned by `iterm_send_command` as `since` to avoid the send→pipe leading-edge race
 - `iterm_capture_screen` — atomic snapshot of visible screen with cursor position and dimensions
 - `iterm_probe_environment` — returns a read-only command sequence for the agent to run
 
@@ -152,20 +151,83 @@ The project packages as a Claude Desktop extension using the MCPB format:
 
 The extension uses `uv` to manage the Python runtime automatically.
 
-## Releases
+## Dual-repo workflow (private dev, public releases)
 
-Tags drive everything. `mcpb/build.sh` reads `GITHUB_REF_NAME` in CI (or `git describe --tags` locally) and patches the version into `manifest.json`. The release workflow (`.github/workflows/release.yml`) fires on `release: published`, runs `make mcpb`, attaches `iterm2-control-mcp-<version>.mcpb` as a release asset, and (on public repos) signs it with GitHub build provenance.
+This checkout has two remotes:
 
-Example — cutting `v0.28.0`:
-
-```bash
-make lint && make test
-git tag v0.28.0
-git push origin v0.28.0
-gh release create v0.28.0 --generate-notes --title "v0.28.0"
+```
+origin  → git@github.com:dude84/iterm2-control-mcp-private.git   # authoritative source, all dev
+public  → git@github.com:dude84/iterm2-control-mcp.git           # release-snapshot store
 ```
 
-For release candidates, add `--prerelease` and use a `-rcN` suffix (e.g. `v0.28.0-rc1`). See `docs/DEVELOPMENT.md` "Releases" section for the full flow.
+Mental model: **private is git, public is a distribution channel.** All commits, branches, WIP, experiments land on private. Public only grows when a release is explicitly cut.
+
+### Day-to-day (private only)
+
+Normal flow — commit to feature branches or main, push to `origin`. Nothing reaches public until you decide to publish.
+
+```bash
+git push origin <branch>        # private, normal
+```
+
+### Publishing to public — decide per change
+
+When a change is merged to private `main`, decide whether it should reach public:
+
+- **Accumulate and batch (default).** Small items — refactors, doc tweaks, internal-only work — wait until the next release. No action needed.
+- **Direct merge to public.** Routine releases (`v0.X.0`): snapshot private `main` → commit onto public `main` → tag → `gh release create`. Single squashed commit per release, clean public history. This is the standard pattern.
+- **PR to public.** Bigger / riskier items you want a review trail on, or changes from an external contributor, or anything that deserves discussion in the open. Open a branch against the public repo, let it get reviewed/CI'd, then merge.
+
+Rule of thumb: **if you would have opened a PR on a private team, open one on public. Otherwise squash-and-push.** The answer isn't "always one or the other" — it's per-change.
+
+### Release command sequence (direct-merge path)
+
+```bash
+make lint && make test                    # on private, verify first
+git worktree add ../iterm2-control-mcp-public public/main
+cd ../iterm2-control-mcp-public
+rsync -a --delete --exclude='.git' --exclude='.venv' --exclude='__pycache__' \
+  --exclude='.mypy_cache' --exclude='.pytest_cache' --exclude='.ruff_cache' \
+  --exclude='*.egg-info' --exclude='dist' --exclude='build' --exclude='mcpb/dist' \
+  --exclude='TODO.md' \
+  ~/_dev/iterm2-control-mcp-private/ ./
+rm -f TODO.md                             # see "Private-only files" below
+git add -A
+git commit -m "v0.X.Y"
+git tag v0.X.Y
+git push public main
+git push public v0.X.Y
+gh release create v0.X.Y --repo dude84/iterm2-control-mcp --generate-notes --title "v0.X.Y"
+cd ~/_dev/iterm2-control-mcp-private
+git worktree remove ../iterm2-control-mcp-public
+```
+
+### Private-only files
+
+Some files track internal state and should never cross to public. They live normally on private (tracked in git, edited freely) and are excluded from the release rsync. Two-step to keep them out of public:
+
+1. Add to the `--exclude='…'` list on the rsync above (stops new content landing on public).
+2. `rm -f <file>` after the rsync, before `git add -A` (removes it from public if a prior release shipped it — `rsync --exclude` alone doesn't delete, it only protects).
+
+Current private-only list:
+
+- **`TODO.md`** — internal roadmap brainstorm, value-proposition drafts, and scenario candidates for `docs/EXAMPLES.md`. Revisit this when the contents stabilize and we want a public-facing roadmap.
+
+For release candidates, add `--prerelease` and use a `-rcN` suffix.
+
+### Hard rules (accident prevention)
+
+1. **Always specify the remote on `git push`** — `git push origin …` or `git push public …`, never bare `git push`. Habit guard for the dual-remote muscle memory.
+2. **Tags live on public only.** Don't tag on private — you'll end up with the same tag name on two different SHAs. Historical private tags through `v0.28.1` are fine; just don't make new ones on private.
+3. **Don't merge `public/main` back into `origin/main`.** Public's squashed release commits would clutter your private history. `git fetch public && git log public/main` if you need to see public state.
+4. **Sensitive commits stay private.** Anything touching credentials, internal infra, or an incomplete experiment lands on private main only. Never reaches public unless you explicitly include it in a release snapshot.
+5. **Releases are remote-visible — always confirm before pushing to public or cutting a `gh release`.** Low-risk once you decide to, but the confirmation gate catches "wait, did I remember to bump the version?" before the world sees it.
+
+### Behind the scenes
+
+Tags drive everything. `mcpb/build.sh` reads `GITHUB_REF_NAME` in CI (or `git describe --tags` locally) and patches the version into `manifest.json`. The release workflow (`.github/workflows/release.yml`) fires on `release: published` (against the public repo), runs `make mcpb`, attaches the `.mcpb` asset, and signs it with GitHub build provenance (gated on public visibility).
+
+See `docs/DEVELOPMENT.md` "Releases" section for the full flow. For the broader "take a private repo public" workflow, see the `gh-public-release-prep` skill.
 
 ---
 
@@ -209,5 +271,4 @@ Shell prompts (y/n, passwords, menus) are handled by the user typing directly in
 
 ## Known / deferred
 
-- **AI command markers via iTerm2 Trigger API.** The `command_markers` config flag works today via text injection (echoes `# [ai]\n` before each AI command). Visually highlighting those lines with a background color via `HighlightLineTrigger` was attempted and reverted due to iterm2-library version compat issues. Not a bug; purely a UX enhancement.
-- See `TODO.md` for larger-scope items.
+- **AI command markers via iTerm2 Trigger API.** The `command_markers` config flag works today via text injection (echoes `# [ai]\n` before each AI command). Visually highlighting those lines with a background color via `HighlightLineTrigger` was attempted and reverted (`2107e73`) due to iterm2-library version compat issues. Not a bug; purely a UX enhancement.

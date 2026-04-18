@@ -41,7 +41,7 @@
       "type": "boolean",
       "title": "AI command markers",
       "description": "Visually highlight AI-sent commands in the terminal with a # [ai] marker line. Makes it easy to distinguish AI commands from user-typed commands.",
-      "default": false
+      "default": true
     },
     "theme_profile": {
       "type": "string",
@@ -118,6 +118,10 @@
     {
       "name": "iterm_read_output",
       "description": "Read recent terminal output. Shared terminal \u2014 buffer contains ALL activity, yours and the user's. Commands you didn't send were typed by the user. Don't speculate about automatic actions. Optionally wait for text or clear buffer."
+    },
+    {
+      "name": "iterm_pipe",
+      "description": "Forward a chunk of one session's output into another session's pane as if typed. Chain with iterm_send_command's returned cursor to stream a command's output across sessions without a leading-edge race."
     },
     {
       "name": "iterm_capture_screen",

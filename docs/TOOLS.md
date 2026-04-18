@@ -35,9 +35,49 @@ All terminal tools accept an optional `session` parameter. If omitted, the activ
 | `iterm_send_keys` | *(MCP only)* | `keys` (enum), `session` (opt) | Send control characters / arrows: `ctrl-c`, `ctrl-d`, `ctrl-z`, `ctrl-l`, `enter`, `tab`, `escape`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end` |
 | `iterm_type` | `type <id\|name> <text>` | `text`, `session` (opt) | Type text into the prompt line **without** pressing Enter. Use to stage a command for user review |
 | `iterm_read_output` | `read <id\|name> [n]` | `lines` (opt), `since` (opt cursor), `wait_for` (opt), `clear` (opt), `session` (opt) | Read recent terminal output. Returns `{ stdout, cursor, session }` and optionally `warning: "cursor_lost_due_to_scroll"` |
+| `iterm_pipe` | *(MCP only)* | `from_session`, `to_session`, `since` (opt), `lines` (opt) | Forward a chunk of A's recent output into B's pane as if typed. Agent drives cadence by looping with the returned cursor. See [Cross-session piping](#cross-session-piping) below |
 | `iterm_capture_screen` | *(MCP only)* | `session` (opt) | Atomic snapshot of the visible screen with cursor position. Use to check whether a command is still running |
 | `iterm_probe_environment` | *(MCP only)* | — | Returns a command sequence to run via `iterm_send_and_read`. See [Environment probe](#environment-probe) below |
 | `iterm_status` | *(MCP only)* | `session` (opt) | Session info: ID, attached state, uptime, buffer size. Called with no args → info on the active session, or `{"active": false, "hint": ...}` if none |
+
+### Cross-session piping
+
+`iterm_pipe` forwards a chunk of one session's recent output into another session's pane, as if typed. It's the primitive for "run this in A, feed the output into a command in B" without routing the payload through the LLM context.
+
+**Works across contexts.** A and B can be any combination of local, SSH'd-into-remote, docker-exec'd, etc. The bridge is the iTerm2 pane layer: daemon A's screen streamer sees whatever iTerm2 renders in pane A (regardless of where A's shell is actually running), and daemon B's `async_send_text` types into pane B (regardless of where B's shell is running). No shared filesystem, no new network transport.
+
+**Caller sets up the sink.** Before the first `iterm_pipe` call, B must already be running a command that reads stdin — `cat -`, `jq -r .tag`, `tee file`, `while read x; do …`. Otherwise the typed bytes land at B's shell prompt and get executed. Close the sink with `iterm_send_keys(to_session, "ctrl-d")` when done.
+
+**Streaming via loop.** The reliable way is to chain the cursor that `iterm_send_command` returns — that's the buffer's position *before* the command was typed, so nothing on the leading edge gets missed:
+
+```python
+# B = local session with a stdin-reading sink waiting
+iterm_send_command(session="B", command="jq -r .image_tag | xargs deploy-to-staging")
+
+# A = session SSH'd into the build host. Capture the pre-send cursor.
+r = iterm_send_command(session="A", command="build --json")
+cursor = r["cursor"]
+
+while build_in_progress:
+    r = iterm_pipe(from_session="A", to_session="B", since=cursor)
+    cursor = r["cursor"]
+    # small sleep here; the agent decides cadence
+
+iterm_send_keys(session="B", keys="ctrl-d")   # close B's stdin
+```
+
+A first `iterm_pipe` call with no `since` and no `lines` also returns the current cursor (from-now probe, types nothing), but there's a race: any output produced by a command you sent just before that probe may already be past the returned cursor and will be silently lost. Prefer the `iterm_send_command`-chain pattern above for command output.
+
+**Backfill (rarely what you want).** Pass an explicit `lines=N` on the first call to forward the source's last N buffered lines. The tail of a fresh pane includes banner, prompt glyphs, and escape artefacts that will pollute the sink — prefer from-now + markers (e.g. `echo ---START---; cmd; echo ---END---`) in any real-world streaming flow.
+
+| Concern | Detail |
+|---|---|
+| **Line-stripped, not byte-transparent** | Source is the ring buffer, which holds one stripped `str` per line. Trailing whitespace inside a line is lost; binary bytes are corrupt. For binary / whitespace-sensitive payloads use `iterm_upload_file` / `iterm_download_file` instead |
+| **Bounded source buffer** | Default 100 lines per `buffer_lines`. A `warning: "cursor_lost_due_to_scroll"` in the response means A produced more than the buffer held between calls. Loop faster or raise `buffer_lines` |
+| **No backpressure, no EOF** | The tool doesn't know when A's source command ended. Agent controls loop lifetime and sends `ctrl-d` to B when done |
+| **Rate capped by iTerm2** | Foreground panes stream in real time; backgrounded or minimized panes throttle to ~1 Hz until refocused. Keep source panes visible for fast streaming |
+| **Payload includes noise** | Command echoes, prompts, and shell-integration escapes are in the buffer. For a clean payload, emit data between markers (`echo ---START---; cmd; echo ---END---`) and have the sink slice between them |
+| **Trailing newline** | `iterm_pipe` appends a `\n` to each non-empty chunk so the sink's line consumer (`cat -`, `jq`, `read`) flushes the final line instead of holding it |
 
 ### Shared terminal caveat
 

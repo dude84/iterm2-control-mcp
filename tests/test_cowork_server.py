@@ -47,6 +47,7 @@ def _make_handler(
         return {"stdout": "\n".join(sliced), "cursor": cursor}
 
     observer.read_since = MagicMock(side_effect=_read_since)
+    observer.refresh_from_screen = AsyncMock()
     observer.wait_for_text = AsyncMock(return_value="matched line")
     observer.clear_buffer = MagicMock()
     observer.capture_screen = AsyncMock(return_value={
@@ -112,12 +113,15 @@ async def test_read_output_invalid_since() -> None:
 @pytest.mark.asyncio
 async def test_send_command() -> None:
     handler = _make_handler(name="dev")
+    # line_cursor mock is set to len(buffer)=0 in the fixture.
     req = Request(method="iterm_send_command", params={"command": "ls -la"}, id=1)
     resp = await handler.handle(req)
     assert isinstance(resp.result, dict)
     assert resp.result["status"] == "executed"
     assert resp.result["session"] == {"id": "abc12345", "name": "dev"}
+    assert resp.result["cursor"] == 0
     handler._observer.send_command.assert_called_once_with("ls -la")
+    handler._observer.refresh_from_screen.assert_awaited_once()
 
 
 @pytest.mark.asyncio
