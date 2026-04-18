@@ -37,7 +37,7 @@ jobs:
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4
         with:
           subject-path: "mcpb/dist/iterm2-control-mcp-*.mcpb"
-      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+      - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           files: mcpb/dist/iterm2-control-mcp-*.mcpb
           tag_name: ${{ github.event.release.tag_name }}
