@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iterm2-control-mcp"
+dynamic = ["version"]
+description = "Claude AI agent with live iTerm2 observation and control"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [{name = "dude84", email = "dude84@users.noreply.github.com"}]
+classifiers = ["License :: OSI Approved :: Apache Software License"]
+dependencies = [
+    "iterm2>=2.14,<3",
+    "mcp>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+iterm2-control-mcp = "iterm2_control_mcp.mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+write_to = "src/iterm2_control_mcp/_version.py"
+fallback_version = "0.0.0"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "iterm2.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "iterm2: requires a live iTerm2 session",
+]

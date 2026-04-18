@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Bump GitHub Actions pins weekly. Pairs with the SHA-pinning in
+  # .github/workflows/*.yml (audit E-7).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

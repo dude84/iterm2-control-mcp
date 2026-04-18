@@ -1,0 +1,148 @@
+{
+  "manifest_version": "0.4",
+  "name": "iterm2-control-mcp",
+  "display_name": "Control iTerm2",
+  "version": "0.25.0",
+  "description": "Open and control interactive iTerm2 terminal sessions \u2014 run shell commands, read output, and manage multiple named sessions. Use this when asked to open a terminal, run commands, check system state, or work in a shell.",
+  "author": {
+    "name": "dude84",
+    "url": "https://github.com/dude84"
+  },
+  "server": {
+    "type": "uv",
+    "entry_point": "src/iterm2_control_mcp/mcp/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "python",
+        "-m",
+        "iterm2_control_mcp.mcp"
+      ],
+      "env": {
+        "ITERM2_CONTROL_MCP_CLEANUP_ON_CLOSE": "${user_config.cleanup_on_close}",
+        "ITERM2_CONTROL_MCP_COMMAND_MARKERS": "${user_config.command_markers}",
+        "ITERM2_CONTROL_MCP_THEME_PROFILE": "${user_config.theme_profile}",
+        "ITERM2_CONTROL_MCP_MAX_SESSIONS": "${user_config.max_sessions}",
+        "ITERM2_CONTROL_MCP_MAX_LOG_MB": "${user_config.max_log_mb}"
+      }
+    }
+  },
+  "user_config": {
+    "cleanup_on_close": {
+      "type": "boolean",
+      "title": "Cleanup on window close",
+      "description": "Automatically clean up the session when the iTerm2 window is closed",
+      "default": true
+    },
+    "command_markers": {
+      "type": "boolean",
+      "title": "AI command markers",
+      "description": "Visually highlight AI-sent commands in the terminal with a # [ai] marker line. Makes it easy to distinguish AI commands from user-typed commands.",
+      "default": false
+    },
+    "theme_profile": {
+      "type": "string",
+      "title": "iTerm2 profile name",
+      "description": "Use an existing iTerm2 profile for session windows. Leave empty for the default orange theme.",
+      "default": ""
+    },
+    "max_sessions": {
+      "type": "number",
+      "title": "Max connected sessions",
+      "description": "Maximum number of sessions that stay connected simultaneously. Oldest inactive session is dropped when the limit is reached.",
+      "default": 16
+    },
+    "max_log_mb": {
+      "type": "number",
+      "title": "Max session log size (MB)",
+      "description": "Per-session log file is rotated at this size, keeping one backup (total ~2× on disk per session). Set to 0 to disable rotation.",
+      "default": 16
+    }
+  },
+  "tools": [
+    {
+      "name": "iterm_list_sessions",
+      "description": "List all active terminal sessions with their IDs, names, and status"
+    },
+    {
+      "name": "iterm_new_session",
+      "description": "Open a new iTerm2 terminal window on your LOCAL Mac. The user types directly in the terminal at any time (SSH, docker exec, prompts). Do not speculate about how the terminal reached its state \u2014 report what you observe."
+    },
+    {
+      "name": "iterm_connect_session",
+      "description": "Connect to an existing session by ID or name. Required before sending commands or reading output."
+    },
+    {
+      "name": "iterm_detach_session",
+      "description": "Detach from the current session. Releases the iTerm2 terminal \u2014 the session daemon stays alive and can be reconnected later."
+    },
+    {
+      "name": "iterm_rename_session",
+      "description": "Rename an active session. Updates metadata and window title."
+    },
+    {
+      "name": "iterm_focus_window",
+      "description": "Bring the session's iTerm2 window to the front and give it keyboard focus."
+    },
+    {
+      "name": "iterm_split_pane",
+      "description": "Split the terminal into two panes. Creates a new session for the new pane."
+    },
+    {
+      "name": "iterm_stop_session",
+      "description": "Stop and destroy a session. Closes the iTerm2 pane by default (and the window if it was the only pane). Pass close_window=false to keep the pane open with a [stopped] title."
+    },
+    {
+      "name": "iterm_clean_sessions",
+      "description": "Remove stale session directories where the daemon is no longer running"
+    },
+    {
+      "name": "iterm_send_command",
+      "description": "Type and execute a shell command. Use iterm_read_output or iterm_capture_screen to check the result. If no output, command may still be running \u2014 check if shell prompt has returned."
+    },
+    {
+      "name": "iterm_send_and_read",
+      "description": "Send a command and return output in one call. Shared terminal \u2014 user types at any time (SSH, docker exec, prompts). When you see commands you didn't send, the user typed them. Report observations, don't speculate."
+    },
+    {
+      "name": "iterm_send_keys",
+      "description": "Send special keys like Ctrl+C, Ctrl+D, arrows, Tab, Escape for interactive programs"
+    },
+    {
+      "name": "iterm_type",
+      "description": "Type text into the terminal without pressing Enter. Use when the user asks to stage a command for review, pre-fill partial input, or demonstrate without executing."
+    },
+    {
+      "name": "iterm_read_output",
+      "description": "Read recent terminal output. Shared terminal \u2014 buffer contains ALL activity, yours and the user's. Commands you didn't send were typed by the user. Don't speculate about automatic actions. Optionally wait for text or clear buffer."
+    },
+    {
+      "name": "iterm_capture_screen",
+      "description": "Snapshot of visible terminal screen with cursor position. Check if shell prompt is on last line (idle) or not (command running). Screen may show user activity \u2014 report observations, don't speculate."
+    },
+    {
+      "name": "iterm_probe_environment",
+      "description": "Get a discovery command sequence to fingerprint the environment. Run commands via iterm_send_and_read."
+    },
+    {
+      "name": "iterm_download_file",
+      "description": "Download a file from the remote terminal to your Mac via iTerm2 OSC 1337. File is saved to ~/Downloads."
+    },
+    {
+      "name": "iterm_upload_file",
+      "description": "Write a file to the remote system. Pass local_path for binary files (connector reads from this Mac) or content+encoding for inline payloads."
+    },
+    {
+      "name": "iterm_status",
+      "description": "Get session info: ID, attached state, uptime, buffer size"
+    }
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin"
+    ]
+  }
+}

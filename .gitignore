@@ -1,0 +1,30 @@
+.venv/
+__pycache__/
+*.egg-info/
+src/iterm2_control_mcp/_version.py
+*.pyc
+.env
+.mypy_cache/
+dist/
+mcpb/dist/
+build/
+.ruff_cache/
+*.egg
+.eggs/
+.DS_Store
+
+# Secrets — defense in depth, even though the repo has no such files today
+*.pem
+*.p12
+*.key
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+credentials.json
+secrets.yaml
+secrets.yml
+.secrets
+
+# Local Claude Code per-user allowlist (contains absolute paths)
+/.claude/settings.local.json

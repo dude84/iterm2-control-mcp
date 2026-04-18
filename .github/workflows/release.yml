@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      # Actions pinned to commit SHAs (audit E-7). Dependabot bumps weekly
+      # via .github/dependabot.yml; the trailing comment is the tag at
+      # pin time for human readability.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - name: Build .mcpb
+        run: |
+          make dev-env
+          make mcpb
+      - name: Generate build provenance attestation
+        # Signs the .mcpb so anyone can verify the artifact came from this
+        # repo/workflow with `gh attestation verify --owner dude84 <file>`.
+        # Skipped on private user-owned repos — GitHub blocks the attestation
+        # API there. Step auto-enables once the repo is made public.
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4
+        with:
+          subject-path: "mcpb/dist/iterm2-control-mcp-*.mcpb"
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: mcpb/dist/iterm2-control-mcp-*.mcpb
+          tag_name: ${{ github.event.release.tag_name }}
