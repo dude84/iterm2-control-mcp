@@ -28,3 +28,6 @@ secrets.yml
 
 # Local Claude Code per-user allowlist (contains absolute paths)
 /.claude/settings.local.json
+
+# Internal roadmap / brainstorming — stays on local disk, never pushed
+/TODO.md

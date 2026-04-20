@@ -150,83 +150,39 @@ The project packages as a Claude Desktop extension using the MCPB format:
 
 The extension uses `uv` to manage the Python runtime automatically.
 
-## Dual-repo workflow (private dev, public releases)
+## Releases
 
-This checkout has two remotes:
+Single-repo workflow: `origin` is `git@github.com:dude84/iterm2-control-mcp.git`. Work happens on `main` directly or on feature branches + PRs — whichever fits the size of the change.
 
-```
-origin  → git@github.com:dude84/iterm2-control-mcp-private.git   # authoritative source, all dev
-public  → git@github.com:dude84/iterm2-control-mcp.git           # release-snapshot store
-```
-
-Mental model: **private is git, public is a distribution channel.** All commits, branches, WIP, experiments land on private. Public only grows when a release is explicitly cut.
-
-### Day-to-day (private only)
-
-Normal flow — commit to feature branches or main, push to `origin`. Nothing reaches public until you decide to publish.
+### Cutting a release
 
 ```bash
-git push origin <branch>        # private, normal
+make lint && make test
+git add CHANGELOG.d/vX.Y.Z.md <other changes>
+git commit -m "vX.Y.Z: <short summary>"
+git tag vX.Y.Z
+git push origin main
+git push origin vX.Y.Z
+gh release create vX.Y.Z --notes-file CHANGELOG.d/vX.Y.Z.md --title vX.Y.Z
 ```
 
-### Publishing to public — decide per change
+Release candidates: add `--prerelease` and use a `-rcN` suffix on the tag and CHANGELOG file.
 
-When a change is merged to private `main`, decide whether it should reach public:
+Confirm before every `git push origin` of a tag or `gh release create` — these are the public-visible actions. Low risk once you decide, but the gate catches "did I remember to bump the version?" before the world sees it.
 
-- **Accumulate and batch (default).** Small items — refactors, doc tweaks, internal-only work — wait until the next release. No action needed.
-- **Direct merge to public.** Routine releases (`v0.X.0`): snapshot private `main` → commit onto public `main` → tag → `gh release create`. Single squashed commit per release, clean public history. This is the standard pattern.
-- **PR to public.** Bigger / riskier items you want a review trail on, or changes from an external contributor, or anything that deserves discussion in the open. Open a branch against the public repo, let it get reviewed/CI'd, then merge.
+### Release notes
 
-Rule of thumb: **if you would have opened a PR on a private team, open one on public. Otherwise squash-and-push.** The answer isn't "always one or the other" — it's per-change.
+Hand-authored, one file per release, lives at `CHANGELOG.d/vX.Y.Z.md`. Keep it user-facing — what changed, what broke, what to migrate. Do not rely on `--generate-notes`; auto-generated "Full Changelog: compare/X...Y" tells users nothing.
 
-### Release command sequence (direct-merge path)
+### Private notes
 
-```bash
-make lint && make test                    # on private, verify first
-git worktree add ../iterm2-control-mcp-public public/main
-cd ../iterm2-control-mcp-public
-rsync -a --delete --exclude='.git' --exclude='.venv' --exclude='__pycache__' \
-  --exclude='.mypy_cache' --exclude='.pytest_cache' --exclude='.ruff_cache' \
-  --exclude='*.egg-info' --exclude='dist' --exclude='build' --exclude='mcpb/dist' \
-  --exclude='TODO.md' \
-  ~/_dev/iterm2-control-mcp-private/ ./
-rm -f TODO.md                             # see "Private-only files" below
-git add -A
-git commit -m "v0.X.Y"
-git tag v0.X.Y
-git push public main
-git push public v0.X.Y
-gh release create v0.X.Y --repo dude84/iterm2-control-mcp --generate-notes --title "v0.X.Y"
-cd ~/_dev/iterm2-control-mcp-private
-git worktree remove ../iterm2-control-mcp-public
-```
-
-### Private-only files
-
-Some files track internal state and should never cross to public. They live normally on private (tracked in git, edited freely) and are excluded from the release rsync. Two-step to keep them out of public:
-
-1. Add to the `--exclude='…'` list on the rsync above (stops new content landing on public).
-2. `rm -f <file>` after the rsync, before `git add -A` (removes it from public if a prior release shipped it — `rsync --exclude` alone doesn't delete, it only protects).
-
-Current private-only list:
-
-- **`TODO.md`** — internal roadmap brainstorm, value-proposition drafts, and scenario candidates for `docs/EXAMPLES.md`. Revisit this when the contents stabilize and we want a public-facing roadmap.
-
-For release candidates, add `--prerelease` and use a `-rcN` suffix.
-
-### Hard rules (accident prevention)
-
-1. **Always specify the remote on `git push`** — `git push origin …` or `git push public …`, never bare `git push`. Habit guard for the dual-remote muscle memory.
-2. **Tags live on public only.** Don't tag on private — you'll end up with the same tag name on two different SHAs. Historical private tags through `v0.28.1` are fine; just don't make new ones on private.
-3. **Don't merge `public/main` back into `origin/main`.** Public's squashed release commits would clutter your private history. `git fetch public && git log public/main` if you need to see public state.
-4. **Sensitive commits stay private.** Anything touching credentials, internal infra, or an incomplete experiment lands on private main only. Never reaches public unless you explicitly include it in a release snapshot.
-5. **Releases are remote-visible — always confirm before pushing to public or cutting a `gh release`.** Low-risk once you decide to, but the confirmation gate catches "wait, did I remember to bump the version?" before the world sees it.
+`TODO.md` is gitignored. It holds internal roadmap / brainstorming that shouldn't land on GitHub. Edit freely; it never pushes. If `TODO.md` contents stabilize into something user-facing, move the relevant parts into `docs/` and commit.
 
 ### Behind the scenes
 
-Tags drive everything. `mcpb/build.sh` reads `GITHUB_REF_NAME` in CI (or `git describe --tags` locally) and patches the version into `manifest.json`. The release workflow (`.github/workflows/release.yml`) fires on `release: published` (against the public repo), runs `make mcpb`, attaches the `.mcpb` asset, and signs it with GitHub build provenance (gated on public visibility).
+Tags drive everything. `mcpb/build.sh` reads `GITHUB_REF_NAME` in CI (or `git describe --tags` locally) and patches the version into a build-time copy of `manifest.json` under `mcpb/dist/` — the committed `manifest.json` is not mutated. The release workflow (`.github/workflows/release.yml`) fires on `release: published`, runs `make mcpb`, attaches the `.mcpb` asset, and signs it with GitHub build provenance.
 
-See `docs/DEVELOPMENT.md` "Releases" section for the full flow. For the broader "take a private repo public" workflow, see the `gh-public-release-prep` skill.
+See `docs/DEVELOPMENT.md` "Releases" section for the full flow.
 
 ---
 

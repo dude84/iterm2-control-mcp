@@ -15,16 +15,25 @@ else
 fi
 echo "Building iterm2-control-mcp $VERSION .mcpb extension"
 
-# Patch manifest.json with git tag version
+mkdir -p "$SCRIPT_DIR/dist"
+
+# Patch manifest.json with git tag version. The committed file must stay
+# untouched — back it up, patch in place so `mcpb pack` picks it up, then
+# restore on exit (even on failure via trap). ensure_ascii=False preserves
+# non-ASCII characters like `×` instead of escaping them to \u00d7.
+cp "$PROJECT_DIR/manifest.json" "$SCRIPT_DIR/dist/manifest.json.orig"
+trap 'mv -f "$SCRIPT_DIR/dist/manifest.json.orig" "$PROJECT_DIR/manifest.json"' EXIT
+
 python -c "
 import json, pathlib
 m = pathlib.Path('$PROJECT_DIR/manifest.json')
 d = json.loads(m.read_text())
 d['version'] = '$VERSION'
-m.write_text(json.dumps(d, indent=2) + '\n')
+m.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n')
 "
 
 # Generate _version.py so the package builds without git inside .mcpb
+# (gitignored, so mutation here is fine).
 python -c "
 import pathlib
 pathlib.Path('$PROJECT_DIR/src/iterm2_control_mcp/_version.py').write_text(
@@ -32,5 +41,4 @@ pathlib.Path('$PROJECT_DIR/src/iterm2_control_mcp/_version.py').write_text(
 )
 "
 
-mkdir -p "$SCRIPT_DIR/dist"
 npx @anthropic-ai/mcpb pack "$PROJECT_DIR" "$SCRIPT_DIR/dist/iterm2-control-mcp-${VERSION}.mcpb"
