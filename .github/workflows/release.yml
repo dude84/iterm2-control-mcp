@@ -34,7 +34,7 @@ jobs:
         # Skipped on private user-owned repos — GitHub blocks the attestation
         # API there. Step auto-enables once the repo is made public.
         if: github.event.repository.visibility == 'public'
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
           subject-path: "mcpb/dist/iterm2-control-mcp-*.mcpb"
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
