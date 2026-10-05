@@ -27,7 +27,7 @@ _KEY_MAP: dict[str, str] = {
     "ctrl-d": "\x04",
     "ctrl-z": "\x1a",
     "ctrl-l": "\x0c",
-    "enter": "\n",
+    "enter": "\r",
     "tab": "\t",
     "escape": "\x1b",
     "backspace": "\x7f",
@@ -146,9 +146,11 @@ class SessionObserver:
         self._command_end_event.set()
 
     async def send_command(self, command: str) -> None:
+        # Submit with CR, as the Return key does. Unix ttys map CR→NL
+        # (ICRNL); Windows cmd.exe / ConPTY ignores a lone LF (#11).
         if self._command_markers:
-            await self._session.async_send_text(AI_MARKER + "\n")
-        await self._session.async_send_text(command + "\n")
+            await self._session.async_send_text(AI_MARKER + "\r")
+        await self._session.async_send_text(command + "\r")
 
     async def send_keys(self, keys: str) -> None:
         seq = _KEY_MAP.get(keys.lower())
@@ -353,7 +355,7 @@ class SessionObserver:
             f"\"$(base64 < {safe_path})\""
             "'\\a'"
         )
-        await self._session.async_send_text(cmd + "\n")
+        await self._session.async_send_text(cmd + "\r")
         return filename
 
     async def upload_file(

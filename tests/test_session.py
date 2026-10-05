@@ -139,6 +139,31 @@ async def test_type_text_does_not_append_newline() -> None:
 
 
 @pytest.mark.asyncio
+async def test_send_command_submits_with_carriage_return() -> None:
+    # A real Return key sends CR. Unix ttys map CR→NL (ICRNL); Windows
+    # cmd.exe / ConPTY ignores a lone LF, so LF never submits there (#11).
+    obs = _make_observer()
+    await obs.send_command("echo hi")
+    obs._session.async_send_text.assert_called_once_with("echo hi\r")
+
+
+@pytest.mark.asyncio
+async def test_send_command_marker_submits_with_carriage_return() -> None:
+    obs = _make_observer()
+    obs._command_markers = True
+    await obs.send_command("echo hi")
+    sent = [c.args[0] for c in obs._session.async_send_text.call_args_list]
+    assert sent == ["# [ai]\r", "echo hi\r"]
+
+
+@pytest.mark.asyncio
+async def test_send_keys_enter_is_carriage_return() -> None:
+    obs = _make_observer()
+    await obs.send_keys("enter")
+    obs._session.async_send_text.assert_called_once_with("\r")
+
+
+@pytest.mark.asyncio
 async def test_send_and_read_shell_integration_fast_path() -> None:
     obs = _make_observer(["$ "])
 
